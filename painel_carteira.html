@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carteira Parada — Vitanuts</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+:root {
+  --color-bg: #161826;
+  --color-surface: #232532;
+  --color-text: #e9e9ed;
+  --color-accent: #9184d9;
+  --color-accent-2: #a7a1db;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-red: #e2685f;
+  --color-red-bg: rgba(226, 104, 95, 0.14);
+  --color-amber: #e0b355;
+  --color-amber-bg: rgba(224, 179, 85, 0.14);
+  --color-green: #6fcf97;
+  --color-green-bg: rgba(111, 207, 151, 0.14);
+  --font: "Inter", system-ui, sans-serif;
+  --radius: 8px;
+}
+* , *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font); font-size: 13.5px; line-height: 1.5; }
+h1 { font-size: 22px; font-weight: 600; margin: 0; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+p { margin: 0; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+.nav { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-divider); margin-bottom: 18px; flex-wrap: wrap; }
+.aviso { background: var(--color-amber-bg); border: 1px solid var(--color-amber); color: var(--color-amber); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; margin-bottom: 18px; }
+.section { margin-bottom: 28px; }
+.card { background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: 12px; padding: 16px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.kpi { background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius); padding: 12px 14px; }
+.kpi .label { font-size: 11px; color: color-mix(in srgb, var(--color-text) 60%, transparent); margin-bottom: 4px; }
+.kpi .value { font-size: 19px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; font-weight: 500; color: color-mix(in srgb, var(--color-text) 60%, transparent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 10px; border-bottom: 1px solid var(--color-divider); }
+td { padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--color-divider) 60%, transparent); vertical-align: top; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.destaque td { background: var(--color-red-bg); }
+.tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+.tag-red { background: var(--color-red-bg); color: var(--color-red); }
+.tag-amber { background: var(--color-amber-bg); color: var(--color-amber); }
+.tag-green { background: var(--color-green-bg); color: var(--color-green); }
+.tag-neutral { background: color-mix(in srgb, var(--color-text) 12%, transparent); color: var(--color-text); }
+.muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.field { display: inline-flex; align-items: center; gap: 6px; }
+input[type=number] { width: 60px; background: var(--color-bg); border: 1px solid var(--color-divider); color: var(--color-text); border-radius: 6px; padding: 4px 6px; font-family: var(--font); }
+input[type=password] { background: var(--color-bg); border: 1px solid var(--color-divider); color: var(--color-text); border-radius: 6px; padding: 8px 10px; font-family: var(--font); width: 220px; }
+.btn { cursor: pointer; border: 1px solid var(--color-accent); color: var(--color-accent); background: transparent; padding: 7px 14px; border-radius: 6px; font-family: var(--font); font-weight: 500; font-size: 12.5px; }
+.btn:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.login-box { max-width: 320px; margin: 80px auto; text-align: center; }
+.section-sub { font-size: 12px; color: color-mix(in srgb, var(--color-text) 55%, transparent); margin-bottom: 10px; }
+.scroll-x { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+
+<script>
+// ================== CONFIGURAÇÃO ==================
+const API_URL = "https://script.google.com/macros/s/AKfycbxExdJYeuzI0hkS9aT6JBqZxy1NkYPMUIfFVnKwYWGoiCScz52o4jZMdUwLlFxmmLRKEg/exec";
+// ====================================================
+
+function getSenhaSalva(){ return sessionStorage.getItem('carteira_senha') || ''; }
+function salvarSenha(s){ sessionStorage.setItem('carteira_senha', s); }
+
+function brl(v){ return 'R$ ' + (Number(v)||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function pct(v){ return v === null || v === undefined ? '—' : (v*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%'; }
+function fmtData(d){ if(!d) return '—'; const [a,m,dia] = d.split('-'); return dia+'/'+m+'/'+a; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function buscarViaJsonp(url, params){
+  return new Promise((resolve) => {
+    const nomeCallback = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random()*100000);
+    const script = document.createElement('script');
+    window[nomeCallback] = (resposta) => { delete window[nomeCallback]; script.remove(); resolve(resposta); };
+    script.onerror = () => { delete window[nomeCallback]; script.remove(); resolve({erro:'falha_de_rede'}); };
+    script.src = url + '?' + params + '&callback=' + nomeCallback + '&_=' + Date.now();
+    document.body.appendChild(script);
+  });
+}
+
+function renderLogin(erro){
+  document.getElementById('app').innerHTML = `
+    <div class="login-box">
+      <h1 style="margin-bottom:16px;">Carteira Parada — Vitanuts</h1>
+      ${erro ? '<p class="tag tag-red" style="display:inline-block;margin-bottom:12px;">Senha incorreta</p><br>' : ''}
+      <input type="password" id="senhaInput" placeholder="Senha" autofocus style="margin-bottom:10px;">
+      <br><button class="btn" id="btnEntrar">Entrar</button>
+    </div>`;
+  document.getElementById('btnEntrar').addEventListener('click', tentarLogin);
+  document.getElementById('senhaInput').addEventListener('keydown', e => { if(e.key === 'Enter') tentarLogin(); });
+}
+async function tentarLogin(){
+  const senha = document.getElementById('senhaInput').value;
+  await carregarDados(senha);
+}
+
+let dados = null;
+async function carregarDados(senha){
+  const resp = await buscarViaJsonp(API_URL, 'senha=' + encodeURIComponent(senha));
+  if(resp.erro === 'senha_incorreta'){ renderLogin(true); return; }
+  if(resp.erro){ document.getElementById('app').innerHTML = '<div class="wrap"><p class="tag tag-red">Erro ao carregar: ' + escapeHtml(resp.erro) + '</p></div>'; return; }
+  salvarSenha(senha);
+  dados = resp;
+  render();
+}
+
+async function atualizarImposto(novoPct){
+  const senha = getSenhaSalva();
+  await buscarViaJsonp(API_URL, 'senha=' + encodeURIComponent(senha) + '&acao=definir_imposto&valor=' + encodeURIComponent(novoPct));
+  await carregarDados(senha);
+}
+
+function render(){
+  if(!dados){ document.getElementById('app').innerHTML = '<p class="muted">Sem dados ainda.</p>'; return; }
+
+  const pedidos = dados.pedidos_parados || [];
+  const produtos = dados.produtos_parados || [];
+  const clientes = dados.clientes || [];
+  const estoque = dados.estoque || [];
+  const proj = dados.projecao || {};
+  const margem = dados.margem || {};
+
+  const valorTotalCarteira = pedidos.reduce((s,p)=>s+p.valor,0);
+  const qtdDestaque = pedidos.filter(p=>p.destaque_90_dias).length;
+
+  document.getElementById('app').innerHTML = `
+    <div class="nav">
+      <h1>Carteira Parada — Vitanuts</h1>
+      <span class="muted" style="margin-left:auto;font-size:11.5px;">Atualizado em ${new Date(dados.gerado_em).toLocaleString('pt-BR')}</span>
+    </div>
+
+    <div class="aviso">${escapeHtml(dados.aviso || 'Este relatório trata somente carteira parada (Em digitação + Em aberto). Não mostra pedidos faturados.')}</div>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Valor parado (${dados.janela_dias||180} dias)</div><div class="value">${brl(valorTotalCarteira)}</div></div>
+      <div class="kpi"><div class="label">Pedidos parados</div><div class="value">${pedidos.length}</div></div>
+      <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaque}</div></div>
+      <div class="kpi"><div class="label">Clientes positivados</div><div class="value">${dados.clientes_positivados_qtd||0} / ${clientes.length}</div></div>
+      <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(proj.valor_atende_sem_comprar)}</div></div>
+      <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(proj.valor_depende_reposicao)}</div></div>
+    </div>
+
+    <div class="section">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <h2>Margem da carteira parada</h2>
+        <div class="field">
+          <label for="impostoInput" class="muted" style="font-size:11.5px;">Imposto %</label>
+          <input type="number" id="impostoInput" value="${dados.imposto_pct}" min="0" max="100" step="0.5">
+          <button class="btn" id="btnSalvarImposto">Salvar</button>
+        </div>
+      </div>
+      <div class="card">
+        <p>Margem geral: <strong style="font-size:16px;">${pct(margem.pct_geral)}</strong> <span class="muted">sobre ${brl(margem.valor_base_calculo)} em pedidos com custo completo</span></p>
+        ${margem.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margem.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Pedidos parados — prioridade por valor</h2>
+      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias.</p>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th class="num">Margem</th><th>Estoque hoje</th></tr></thead>
+          <tbody>
+            ${pedidos.map(p => {
+              const isolado = (dados.comparacao_isolado||[]).find(x=>x.pedido_id===p.id);
+              const atende = isolado ? isolado.atende_isolado : null;
+              return `<tr class="${p.destaque_90_dias?'destaque':''}">
+                <td>#${escapeHtml(p.numero)}</td>
+                <td>${escapeHtml(p.cliente)}</td>
+                <td>${fmtData(p.data_pedido)}</td>
+                <td class="num">${p.dias_parado ?? '—'}</td>
+                <td class="num">${brl(p.valor)}</td>
+                <td class="num">${p.margem_indisponivel_item_sem_custo ? '<span class="tag tag-amber">sem custo cadastrado</span>' : pct(p.margem_pct)}</td>
+                <td>${atende===null?'<span class="muted">—</span>':(atende?'<span class="tag tag-green">atende</span>':'<span class="tag tag-red">falta item</span>')}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Produtos parados</h2>
+      <p class="section-sub">SKUs presos nos pedidos em aberto/digitação acima</p>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. presa</th><th class="num">Valor</th><th class="num">Em ${pedidos.length?'':''} pedidos</th></tr></thead>
+          <tbody>
+            ${produtos.map(p => `<tr>
+              <td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.nome)}</td>
+              <td class="num">${p.quantidade}</td><td class="num">${brl(p.valor)}</td><td class="num">${p.pedidos}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Estoque (tabela de custo)</h2>
+      <p class="section-sub">Só os SKUs cadastrados na tabela de custo — ${estoque.filter(e=>e.saldo===null).length>0?'<span class="tag tag-amber">alguns sem saldo confirmado, ver nota abaixo</span>':'todos com saldo lido do Bling'}</p>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Saldo</th></tr></thead>
+          <tbody>
+            ${estoque.map(e => `<tr><td>${escapeHtml(e.sku)}</td><td>${escapeHtml(e.nome)}</td><td class="num">${e.saldo===null?'<span class="tag tag-amber">não confirmado</span>':e.saldo}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>O que precisa comprar</h2>
+      <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque atual</p>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
+          <tbody>
+            ${(proj.lista_comprar||[]).length===0 ? '<tr><td colspan="4" class="muted">Nada a comprar — estoque cobre toda a carteira parada.</td></tr>' :
+              (proj.lista_comprar||[]).map(i => `<tr><td>${escapeHtml(i.sku)}</td><td>${escapeHtml(i.nome)}</td><td class="num">${i.quantidade_faltante}</td><td class="num">${brl(i.custo_estimado)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Clientes B2B — positivação (${dados.janela_dias||180} dias)</h2>
+      <p class="section-sub">Base fixa de ${clientes.length} clientes. Última compra = pedido em aberto/digitação OU nota fiscal, o que for mais recente.</p>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>Cliente</th><th>Cidade/UF</th><th>Status</th><th>Última atividade</th><th class="num">Dias sem comprar</th></tr></thead>
+          <tbody>
+            ${clientes.map(c => `<tr>
+              <td>${escapeHtml(c.nome)}</td>
+              <td>${escapeHtml(c.cidade)}/${escapeHtml(c.uf)}</td>
+              <td>${c.status==='positivado' ? '<span class="tag tag-green">positivado</span>' : '<span class="tag tag-neutral">'+escapeHtml(c.status)+'</span>'}</td>
+              <td>${fmtData(c.ultima_compra)}${c.origem?' <span class="muted" style="font-size:10.5px;">('+(c.origem==='nota_fiscal'?'nota fiscal':'pedido')+')</span>':''}</td>
+              <td class="num">${c.dias_sem_comprar ?? '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btnSalvarImposto').addEventListener('click', () => {
+    const v = document.getElementById('impostoInput').value;
+    atualizarImposto(v);
+  });
+}
+
+const senhaSalva = getSenhaSalva();
+if(senhaSalva){ carregarDados(senhaSalva); } else { renderLogin(false); }
+</script>
+</body>
+</html>
