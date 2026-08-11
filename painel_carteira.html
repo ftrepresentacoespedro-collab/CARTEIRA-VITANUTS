@@ -116,18 +116,37 @@ async function atualizarImposto(novoPct){
   await carregarDados(senha);
 }
 
+let clientesFiltroTexto = '';
+let clientesMostrarTodos = false;
+const CLIENTES_LIMITE_PADRAO = 30;
+
 function render(){
   if(!dados){ document.getElementById('app').innerHTML = '<p class="muted">Sem dados ainda.</p>'; return; }
 
   const pedidos = dados.pedidos_parados || [];
   const produtos = dados.produtos_parados || [];
-  const clientes = dados.clientes || [];
+  const clientesTodos = dados.clientes || [];
   const estoque = dados.estoque || [];
   const proj = dados.projecao || {};
   const margem = dados.margem || {};
+  const cB2B = dados.carteira_b2b || {qtd:0,valor:0};
+  const cB2C = dados.carteira_b2c || {qtd:0,valor:0};
+  const cGeral = dados.carteira_geral || {qtd:0,valor:0};
 
-  const valorTotalCarteira = pedidos.reduce((s,p)=>s+p.valor,0);
   const qtdDestaque = pedidos.filter(p=>p.destaque_90_dias).length;
+
+  // Clientes: positivados sempre primeiro (mais recentes primeiro), "sem compras" depois
+  const clientesOrdenados = [...clientesTodos].sort((a,b) => {
+    if(a.status==='positivado' && b.status!=='positivado') return -1;
+    if(a.status!=='positivado' && b.status==='positivado') return 1;
+    if(a.status==='positivado') return (a.dias_sem_comprar||0) - (b.dias_sem_comprar||0);
+    return (a.nome||'').localeCompare(b.nome||'');
+  });
+  const filtroLower = clientesFiltroTexto.trim().toLowerCase();
+  const clientesFiltrados = filtroLower
+    ? clientesOrdenados.filter(c => (c.nome||'').toLowerCase().includes(filtroLower) || (c.cnpj||'').includes(filtroLower.replace(/\D/g,'')))
+    : clientesOrdenados;
+  const clientesExibidos = clientesMostrarTodos ? clientesFiltrados : clientesFiltrados.slice(0, CLIENTES_LIMITE_PADRAO);
 
   document.getElementById('app').innerHTML = `
     <div class="nav">
@@ -137,18 +156,27 @@ function render(){
 
     <div class="aviso">${escapeHtml(dados.aviso || 'Este relatório trata somente carteira parada (Em digitação + Em aberto). Não mostra pedidos faturados.')}</div>
 
+    <div class="section">
+      <h2 style="margin-bottom:8px;">Carteira parada por canal</h2>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        <div class="kpi" style="border-color:var(--color-accent);"><div class="label">Geral</div><div class="value">${brl(cGeral.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cGeral.qtd} pedidos</div></div>
+        <div class="kpi"><div class="label">B2B</div><div class="value">${brl(cB2B.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2B.qtd} pedidos</div></div>
+        <div class="kpi"><div class="label">B2C</div><div class="value">${brl(cB2C.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2C.qtd} pedidos</div></div>
+      </div>
+      <p class="section-sub" style="margin-bottom:12px;">A partir daqui, todo o relatório (produtos parados, clientes, estoque, margem) trata apenas da carteira <strong>B2B</strong>.</p>
+    </div>
+
     <div class="kpi-grid">
-      <div class="kpi"><div class="label">Valor parado (${dados.janela_dias||180} dias)</div><div class="value">${brl(valorTotalCarteira)}</div></div>
-      <div class="kpi"><div class="label">Pedidos parados</div><div class="value">${pedidos.length}</div></div>
+      <div class="kpi"><div class="label">Pedidos parados (B2B)</div><div class="value">${pedidos.length}</div></div>
       <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaque}</div></div>
-      <div class="kpi"><div class="label">Clientes positivados</div><div class="value">${dados.clientes_positivados_qtd||0} / ${clientes.length}</div></div>
+      <div class="kpi"><div class="label">Clientes positivados (B2B, cód 0)</div><div class="value">${dados.clientes_positivados_qtd||0} / ${clientesTodos.length}</div></div>
       <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(proj.valor_atende_sem_comprar)}</div></div>
       <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(proj.valor_depende_reposicao)}</div></div>
     </div>
 
     <div class="section">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <h2>Margem da carteira parada</h2>
+        <h2>Margem da carteira parada (B2B)</h2>
         <div class="field">
           <label for="impostoInput" class="muted" style="font-size:11.5px;">Imposto %</label>
           <input type="number" id="impostoInput" value="${dados.imposto_pct}" min="0" max="100" step="0.5">
@@ -162,16 +190,18 @@ function render(){
     </div>
 
     <div class="section">
-      <h2>Pedidos parados — prioridade por valor</h2>
-      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias.</p>
+      <h2>Pedidos parados (B2B) — prioridade por valor</h2>
+      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias. Clique num pedido pra ver os produtos.</p>
       <div class="card scroll-x">
         <table>
-          <thead><tr><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th class="num">Margem</th><th>Estoque hoje</th></tr></thead>
+          <thead><tr><th></th><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th class="num">Margem</th><th>Estoque hoje</th></tr></thead>
           <tbody>
-            ${pedidos.map(p => {
+            ${pedidos.map((p,i) => {
               const isolado = (dados.comparacao_isolado||[]).find(x=>x.pedido_id===p.id);
               const atende = isolado ? isolado.atende_isolado : null;
-              return `<tr class="${p.destaque_90_dias?'destaque':''}">
+              const itensHtml = (p.itens||[]).map(it => `<div style="padding:3px 0;color:var(--color-neutral-300);font-size:12px;">${escapeHtml(it.nome)} <span class="muted">(${escapeHtml(it.sku)})</span> — <span class="num">${it.quantidade} un</span></div>`).join('');
+              return `<tr class="${p.destaque_90_dias?'destaque':''} linha-pedido" data-idx="${i}" style="cursor:pointer;">
+                <td class="expand-icon" style="width:16px;color:var(--color-accent);">▸</td>
                 <td>#${escapeHtml(p.numero)}</td>
                 <td>${escapeHtml(p.cliente)}</td>
                 <td>${fmtData(p.data_pedido)}</td>
@@ -179,7 +209,8 @@ function render(){
                 <td class="num">${brl(p.valor)}</td>
                 <td class="num">${p.margem_indisponivel_item_sem_custo ? '<span class="tag tag-amber">sem custo cadastrado</span>' : pct(p.margem_pct)}</td>
                 <td>${atende===null?'<span class="muted">—</span>':(atende?'<span class="tag tag-green">atende</span>':'<span class="tag tag-red">falta item</span>')}</td>
-              </tr>`;
+              </tr>
+              <tr class="itens-pedido" data-parent="${i}" style="display:none;"><td></td><td colspan="7" style="padding:8px 0 12px 24px;">${itensHtml}</td></tr>`;
             }).join('')}
           </tbody>
         </table>
@@ -187,11 +218,11 @@ function render(){
     </div>
 
     <div class="section">
-      <h2>Produtos parados</h2>
+      <h2>Produtos parados (B2B)</h2>
       <p class="section-sub">SKUs presos nos pedidos em aberto/digitação acima</p>
       <div class="card scroll-x">
         <table>
-          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. presa</th><th class="num">Valor</th><th class="num">Em ${pedidos.length?'':''} pedidos</th></tr></thead>
+          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. presa</th><th class="num">Valor</th><th class="num">Pedidos</th></tr></thead>
           <tbody>
             ${produtos.map(p => `<tr>
               <td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.nome)}</td>
@@ -231,13 +262,18 @@ function render(){
 
     <div class="section">
       <h2>Clientes B2B — positivação (${dados.janela_dias||180} dias)</h2>
-      <p class="section-sub">Base fixa de ${clientes.length} clientes. Última compra = pedido em aberto/digitação OU nota fiscal, o que for mais recente.</p>
+      <p class="section-sub">Base fixa de ${clientesTodos.length} clientes. Última compra = pedido em aberto/digitação OU nota fiscal, o que for mais recente. Positivados aparecem primeiro.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <input type="text" id="clientesBusca" placeholder="Buscar por nome ou CNPJ..." value="${escapeHtml(clientesFiltroTexto)}" style="flex:1;min-width:200px;background:var(--color-surface);border:1px solid var(--color-divider);color:var(--color-text);border-radius:6px;padding:8px 10px;font-family:inherit;">
+        <span class="muted" style="font-size:11.5px;">${clientesFiltrados.length} cliente(s)</span>
+      </div>
       <div class="card scroll-x">
         <table>
-          <thead><tr><th>Cliente</th><th>Cidade/UF</th><th>Status</th><th>Última atividade</th><th class="num">Dias sem comprar</th></tr></thead>
+          <thead><tr><th>Cliente</th><th>CNPJ</th><th>Cidade/UF</th><th>Status</th><th>Última atividade</th><th class="num">Dias sem comprar</th></tr></thead>
           <tbody>
-            ${clientes.map(c => `<tr>
+            ${clientesExibidos.map(c => `<tr>
               <td>${escapeHtml(c.nome)}</td>
+              <td class="muted" style="font-size:11.5px;">${escapeHtml(c.cnpj)}</td>
               <td>${escapeHtml(c.cidade)}/${escapeHtml(c.uf)}</td>
               <td>${c.status==='positivado' ? '<span class="tag tag-green">positivado</span>' : '<span class="tag tag-neutral">'+escapeHtml(c.status)+'</span>'}</td>
               <td>${fmtData(c.ultima_compra)}${c.origem?' <span class="muted" style="font-size:10.5px;">('+(c.origem==='nota_fiscal'?'nota fiscal':'pedido')+')</span>':''}</td>
@@ -246,6 +282,10 @@ function render(){
           </tbody>
         </table>
       </div>
+      ${clientesFiltrados.length > CLIENTES_LIMITE_PADRAO ? `
+        <div style="text-align:center;margin-top:10px;">
+          <button class="btn" id="btnMostrarMaisClientes">${clientesMostrarTodos ? 'Mostrar menos' : 'Mostrar todos os ' + clientesFiltrados.length}</button>
+        </div>` : ''}
     </div>
   `;
 
@@ -253,6 +293,33 @@ function render(){
     const v = document.getElementById('impostoInput').value;
     atualizarImposto(v);
   });
+
+  document.querySelectorAll('.linha-pedido').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const idx = tr.getAttribute('data-idx');
+      const corpo = document.querySelector('.itens-pedido[data-parent="'+idx+'"]');
+      const icone = tr.querySelector('.expand-icon');
+      const aberto = corpo.style.display !== 'none';
+      corpo.style.display = aberto ? 'none' : '';
+      icone.textContent = aberto ? '▸' : '▾';
+    });
+  });
+
+  const buscaInput = document.getElementById('clientesBusca');
+  if(buscaInput){
+    buscaInput.addEventListener('input', (e) => {
+      clientesFiltroTexto = e.target.value;
+      clientesMostrarTodos = false;
+      render();
+      document.getElementById('clientesBusca').focus();
+      document.getElementById('clientesBusca').value = clientesFiltroTexto;
+      document.getElementById('clientesBusca').setSelectionRange(clientesFiltroTexto.length, clientesFiltroTexto.length);
+    });
+  }
+  const btnMais = document.getElementById('btnMostrarMaisClientes');
+  if(btnMais){
+    btnMais.addEventListener('click', () => { clientesMostrarTodos = !clientesMostrarTodos; render(); });
+  }
 }
 
 const senhaSalva = getSenhaSalva();
