@@ -263,14 +263,14 @@ function render(){
         <div class="kpi"><div class="label">B2B</div><div class="value">${brl(cB2B.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2B.qtd} pedidos</div></div>
         <div class="kpi"><div class="label">B2C</div><div class="value">${brl(cB2C.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2C.qtd} pedidos</div></div>
       </div>
-      <p class="section-sub" style="margin-bottom:12px;">Daqui até "Clientes B2B", o relatório trata apenas da carteira <strong>B2B</strong>. A carteira <strong>B2C</strong> tem seção própria de margem mais abaixo.</p>
+      <p class="section-sub" style="margin-bottom:12px;">Daqui até "Clientes B2B", o relatório trata apenas da carteira <strong>B2B</strong>. A carteira <strong>B2C</strong> tem seção própria mais abaixo — e é ela quem aloca o estoque primeiro (prioridade do canal); o B2B usa o que sobra.</p>
     </div>
 
     <div class="kpi-grid">
       <div class="kpi"><div class="label">Pedidos parados (B2B)</div><div class="value">${pedidos.length}</div></div>
       <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaque}</div></div>
       <div class="kpi"><div class="label">Clientes positivados (B2B, cód 0)</div><div class="value">${dados.clientes_positivados_qtd||0} / ${clientesTodos.length}</div></div>
-      <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(proj.valor_atende_sem_comprar)}</div></div>
+      <div class="kpi"><div class="label">Atende com estoque restante</div><div class="value" style="color:var(--color-green);">${brl(proj.valor_atende_sem_comprar)}</div></div>
       <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(proj.valor_depende_reposicao)}</div></div>
     </div>
 
@@ -321,7 +321,7 @@ function render(){
 
     <div class="section">
       <h2>O que precisa comprar</h2>
-      <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque atual. Aloca ANTES do B2C — a lista equivalente do B2C está na seção própria mais abaixo e já considera o que sobrar daqui.</p>
+      <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque que sobrou depois do B2C já ter alocado a dele (o B2C tem prioridade — seção abaixo).</p>
       <div class="card scroll-x">
         <table>
           <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
@@ -363,12 +363,12 @@ function render(){
 
     <div class="section section-divider">
       <h2 style="margin-bottom:8px;">Carteira parada B2C</h2>
-      <p class="section-sub" style="margin-bottom:12px;">Mesmo tratamento do B2B — margem, estoque e o que comprar. O saldo de estoque é físico e único: a fila B2B aloca primeiro (seção principal acima), e o B2C abaixo usa o que sobrou depois disso, pra não contar a mesma unidade duas vezes.</p>
+      <p class="section-sub" style="margin-bottom:12px;">Mesmo tratamento do B2B — margem, estoque e o que comprar. O saldo de estoque é físico e único: a fila B2C aloca PRIMEIRO (prioridade do canal), e o B2B (seção principal acima) usa o que sobra depois disso.</p>
 
       <div class="kpi-grid">
         <div class="kpi"><div class="label">Pedidos parados (B2C)</div><div class="value">${pedidosB2C.length}</div></div>
         <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaqueB2C}</div></div>
-        <div class="kpi"><div class="label">Atende com estoque restante</div><div class="value" style="color:var(--color-green);">${brl(projB2C.valor_atende_sem_comprar)}</div></div>
+        <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(projB2C.valor_atende_sem_comprar)}</div></div>
         <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(projB2C.valor_depende_reposicao)}</div></div>
       </div>
 
@@ -379,7 +379,7 @@ function render(){
       </div>
 
       <h2 style="margin-top:20px;">Pedidos parados (B2C) — prioridade por valor</h2>
-      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Coluna "Estoque restante" = isolado, contra o saldo bruto (sem descontar o que o B2B já reservou). Clique num pedido pra ver os produtos.</p>
+      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Coluna "Estoque hoje" = comparação isolada, contra o saldo bruto (não desconta pedido nenhum, é só "esse pedido sozinho teria o que precisa?"). Clique num pedido pra ver os produtos.</p>
       <div class="card scroll-x">
         ${tabelaPedidosHtml(pedidosB2C, dados.comparacao_isolado_b2c || [], 'b2c')}
       </div>
