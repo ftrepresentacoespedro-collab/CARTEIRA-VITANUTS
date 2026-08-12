@@ -58,6 +58,13 @@ input[type=password] { background: var(--color-bg); border: 1px solid var(--colo
 .scroll-x { overflow-x: auto; }
 .badge-visitantes { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 .badge-visitantes .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-green); display: inline-block; }
+.topico { border: 1px solid var(--color-divider); border-radius: 10px; margin-bottom: 8px; overflow: hidden; background: var(--color-surface); }
+.topico-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; cursor: pointer; }
+.topico-header:hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.topico-header h2 { font-size: 14px; }
+.topico-chevron { color: var(--color-accent); font-size: 13px; transition: transform 0.15s ease; flex-shrink: 0; }
+.topico-chevron.aberto { transform: rotate(90deg); }
+.topico-corpo { padding: 4px 16px 18px; border-top: 1px solid var(--color-divider); }
 </style>
 </head>
 <body>
@@ -159,6 +166,33 @@ function atualizarBadgeVisitantes(){
 let clientesFiltroTexto = '';
 let clientesMostrarTodos = false;
 const CLIENTES_LIMITE_PADRAO = 30;
+let topicosAbertos = new Set(); // vazio = tudo recolhido por padrão
+
+function renderTopico(key, titulo, corpoHtml){
+  const aberto = topicosAbertos.has(key);
+  return `
+    <div class="topico">
+      <div class="topico-header" data-topico="${key}">
+        <h2>${titulo}</h2>
+        <span class="topico-chevron${aberto ? ' aberto' : ''}">▸</span>
+      </div>
+      <div class="topico-corpo" data-topico-corpo="${key}" style="display:${aberto ? 'block' : 'none'};">
+        ${corpoHtml}
+      </div>
+    </div>`;
+}
+function ligarTopicos(){
+  document.querySelectorAll('.topico-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const key = header.getAttribute('data-topico');
+      const corpo = document.querySelector('.topico-corpo[data-topico-corpo="'+key+'"]');
+      const chevron = header.querySelector('.topico-chevron');
+      const aberto = topicosAbertos.has(key);
+      if(aberto){ topicosAbertos.delete(key); corpo.style.display = 'none'; chevron.classList.remove('aberto'); }
+      else { topicosAbertos.add(key); corpo.style.display = 'block'; chevron.classList.add('aberto'); }
+    });
+  });
+}
 
 // Gera as duas tabelas de pedidos parados (linhas + expansão de itens)
 // reaproveitando o mesmo HTML pra B2B e B2C, mudando só o prefixo do
@@ -247,6 +281,121 @@ function render(){
     : clientesOrdenados;
   const clientesExibidos = clientesMostrarTodos ? clientesFiltrados : clientesFiltrados.slice(0, CLIENTES_LIMITE_PADRAO);
 
+  const margemCombinada = dados.margem_combinada || {};
+
+  const corpoKpiB2B = `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Pedidos parados (B2B)</div><div class="value">${pedidos.length}</div></div>
+      <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaque}</div></div>
+      <div class="kpi"><div class="label">Clientes positivados (B2B, cód 0)</div><div class="value">${dados.clientes_positivados_qtd||0} / ${clientesTodos.length}</div></div>
+      <div class="kpi"><div class="label">Atende com estoque restante</div><div class="value" style="color:var(--color-green);">${brl(proj.valor_atende_sem_comprar)}</div></div>
+      <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(proj.valor_depende_reposicao)}</div></div>
+    </div>`;
+
+  const corpoMargemB2B = `
+    <div style="display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <div class="field">
+        <label for="impostoInput" class="muted" style="font-size:11.5px;">Imposto %</label>
+        <input type="number" id="impostoInput" value="${dados.imposto_pct}" min="0" max="100" step="0.5">
+        <button class="btn" id="btnSalvarImposto">Salvar</button>
+      </div>
+    </div>
+    <div class="card">
+      <p>Margem geral: <strong style="font-size:16px;">${pct(margem.pct_geral)}</strong> <span class="muted">sobre ${brl(margem.valor_base_calculo)} em pedidos com custo completo</span></p>
+      ${margem.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margem.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
+      <p class="muted" style="font-size:11px;margin-top:8px;">O imposto % vale para B2B e B2C juntos — mudar aqui também recalcula a margem B2C.</p>
+    </div>`;
+
+  const corpoPedidosB2B = `
+    <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias. Clique num pedido pra ver os produtos.</p>
+    <div class="card scroll-x">${tabelaPedidosHtml(pedidos, dados.comparacao_isolado || [], 'b2b')}</div>`;
+
+  const corpoProdutosB2B = `
+    <p class="section-sub">SKUs presos nos pedidos em aberto/digitação acima</p>
+    <div class="card scroll-x">${tabelaProdutosParadosHtml(produtos)}</div>`;
+
+  const corpoEstoque = `
+    <p class="section-sub">Só os SKUs cadastrados na tabela de custo — ${estoque.filter(e=>e.saldo===null).length>0?'<span class="tag tag-amber">alguns sem saldo confirmado, ver nota abaixo</span>':'todos com saldo lido do Bling'}. Esse saldo é físico e compartilhado entre B2B e B2C.</p>
+    <div class="card scroll-x">
+      <table>
+        <thead><tr><th>SKU</th><th>Produto</th><th class="num">Saldo</th></tr></thead>
+        <tbody>
+          ${estoque.map(e => `<tr><td>${escapeHtml(e.sku)}</td><td>${escapeHtml(e.nome)}</td><td class="num">${e.saldo===null?'<span class="tag tag-amber">não confirmado</span>':e.saldo}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  const corpoComprarB2B = `
+    <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque que sobrou depois do B2C já ter alocado a dele (o B2C tem prioridade — ver tópicos B2C).</p>
+    <div class="card scroll-x">
+      <table>
+        <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
+        <tbody>
+          ${(proj.lista_comprar||[]).length===0 ? '<tr><td colspan="4" class="muted">Nada a comprar — estoque cobre toda a carteira parada.</td></tr>' :
+            (proj.lista_comprar||[]).map(i => `<tr><td>${escapeHtml(i.sku)}</td><td>${escapeHtml(i.nome)}</td><td class="num">${i.quantidade_faltante}</td><td class="num">${brl(i.custo_estimado)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  const corpoClientesB2B = `
+    <p class="section-sub">Base fixa de ${clientesTodos.length} clientes. Última compra = pedido em aberto/digitação OU nota fiscal, o que for mais recente. Positivados aparecem primeiro.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+      <input type="text" id="clientesBusca" placeholder="Buscar por nome ou CNPJ..." value="${escapeHtml(clientesFiltroTexto)}" style="flex:1;min-width:200px;background:var(--color-surface);border:1px solid var(--color-divider);color:var(--color-text);border-radius:6px;padding:8px 10px;font-family:inherit;">
+      <span class="muted" style="font-size:11.5px;">${clientesFiltrados.length} cliente(s)</span>
+    </div>
+    <div class="card scroll-x">
+      <table>
+        <thead><tr><th>Cliente</th><th>CNPJ</th><th>Cidade/UF</th><th>Status</th><th>Última atividade</th><th class="num">Dias sem comprar</th></tr></thead>
+        <tbody>
+          ${clientesExibidos.map(c => `<tr>
+            <td>${escapeHtml(c.nome)}</td>
+            <td class="muted" style="font-size:11.5px;">${escapeHtml(c.cnpj)}</td>
+            <td>${escapeHtml(c.cidade)}/${escapeHtml(c.uf)}</td>
+            <td>${c.status==='positivado' ? '<span class="tag tag-green">positivado</span>' : '<span class="tag tag-neutral">'+escapeHtml(c.status)+'</span>'}</td>
+            <td>${fmtData(c.ultima_compra)}${c.origem?' <span class="muted" style="font-size:10.5px;">('+(c.origem==='nota_fiscal'?'nota fiscal':'pedido')+')</span>':''}</td>
+            <td class="num">${c.dias_sem_comprar ?? '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${clientesFiltrados.length > CLIENTES_LIMITE_PADRAO ? `
+      <div style="text-align:center;margin-top:10px;">
+        <button class="btn" id="btnMostrarMaisClientes">${clientesMostrarTodos ? 'Mostrar menos' : 'Mostrar todos os ' + clientesFiltrados.length}</button>
+      </div>` : ''}`;
+
+  const corpoKpiB2C = `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Pedidos parados (B2C)</div><div class="value">${pedidosB2C.length}</div></div>
+      <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaqueB2C}</div></div>
+      <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(projB2C.valor_atende_sem_comprar)}</div></div>
+      <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(projB2C.valor_depende_reposicao)}</div></div>
+    </div>`;
+
+  const corpoMargemB2C = `
+    <div class="card">
+      <p>Margem geral: <strong style="font-size:16px;">${pct(margemB2C.pct_geral)}</strong> <span class="muted">sobre ${brl(margemB2C.valor_base_calculo)} em pedidos com custo completo</span></p>
+      ${margemB2C.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margemB2C.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
+    </div>`;
+
+  const corpoPedidosB2C = `
+    <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Coluna "Estoque hoje" = comparação isolada, contra o saldo bruto (não desconta nenhum outro pedido, é só "esse pedido sozinho teria o que precisa?"). Clique num pedido pra ver os produtos.</p>
+    <div class="card scroll-x">${tabelaPedidosHtml(pedidosB2C, dados.comparacao_isolado_b2c || [], 'b2c')}</div>`;
+
+  const corpoProdutosB2C = `
+    <div class="card scroll-x">${tabelaProdutosParadosHtml(produtosB2C)}</div>`;
+
+  const corpoComprarB2C = `
+    <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque atual — o B2C aloca primeiro (prioridade do canal), antes do B2B.</p>
+    <div class="card scroll-x">
+      <table>
+        <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
+        <tbody>
+          ${(projB2C.lista_comprar||[]).length===0 ? '<tr><td colspan="4" class="muted">Nada a comprar — estoque cobre toda a carteira parada B2C.</td></tr>' :
+            (projB2C.lista_comprar||[]).map(i => `<tr><td>${escapeHtml(i.sku)}</td><td>${escapeHtml(i.nome)}</td><td class="num">${i.quantidade_faltante}</td><td class="num">${brl(i.custo_estimado)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
   document.getElementById('app').innerHTML = `
     <div class="nav">
       <h1>Carteira Parada — Vitanuts</h1>
@@ -263,143 +412,32 @@ function render(){
         <div class="kpi"><div class="label">B2B</div><div class="value">${brl(cB2B.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2B.qtd} pedidos</div></div>
         <div class="kpi"><div class="label">B2C</div><div class="value">${brl(cB2C.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2C.qtd} pedidos</div></div>
       </div>
-      <p class="section-sub" style="margin-bottom:12px;">Daqui até "Clientes B2B", o relatório trata apenas da carteira <strong>B2B</strong>. A carteira <strong>B2C</strong> tem seção própria mais abaixo — e é ela quem aloca o estoque primeiro (prioridade do canal); o B2B usa o que sobra.</p>
-    </div>
-
-    <div class="kpi-grid">
-      <div class="kpi"><div class="label">Pedidos parados (B2B)</div><div class="value">${pedidos.length}</div></div>
-      <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaque}</div></div>
-      <div class="kpi"><div class="label">Clientes positivados (B2B, cód 0)</div><div class="value">${dados.clientes_positivados_qtd||0} / ${clientesTodos.length}</div></div>
-      <div class="kpi"><div class="label">Atende com estoque restante</div><div class="value" style="color:var(--color-green);">${brl(proj.valor_atende_sem_comprar)}</div></div>
-      <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(proj.valor_depende_reposicao)}</div></div>
     </div>
 
     <div class="section">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <h2>Margem da carteira parada (B2B)</h2>
-        <div class="field">
-          <label for="impostoInput" class="muted" style="font-size:11.5px;">Imposto %</label>
-          <input type="number" id="impostoInput" value="${dados.imposto_pct}" min="0" max="100" step="0.5">
-          <button class="btn" id="btnSalvarImposto">Salvar</button>
-        </div>
+      <h2 style="margin-bottom:8px;">Margem geral</h2>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="kpi"><div class="label">B2B</div><div class="value">${pct(margem.pct_geral)}</div><div class="muted" style="font-size:11px;margin-top:2px;">sobre ${brl(margem.valor_base_calculo)}</div></div>
+        <div class="kpi"><div class="label">B2C</div><div class="value">${pct(margemB2C.pct_geral)}</div><div class="muted" style="font-size:11px;margin-top:2px;">sobre ${brl(margemB2C.valor_base_calculo)}</div></div>
+        <div class="kpi" style="border-color:var(--color-accent);"><div class="label">Combinada (B2B + B2C)</div><div class="value">${pct(margemCombinada.pct_geral)}</div><div class="muted" style="font-size:11px;margin-top:2px;">sobre ${brl(margemCombinada.valor_base_calculo)}</div></div>
       </div>
-      <div class="card">
-        <p>Margem geral: <strong style="font-size:16px;">${pct(margem.pct_geral)}</strong> <span class="muted">sobre ${brl(margem.valor_base_calculo)} em pedidos com custo completo</span></p>
-        ${margem.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margem.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
-        <p class="muted" style="font-size:11px;margin-top:8px;">O imposto % vale para B2B e B2C juntos — mudar aqui também recalcula a margem B2C mais abaixo.</p>
-      </div>
+      <p class="section-sub" style="margin-top:10px;">Combinada é ponderada pelo valor de cada canal, não a média simples dos dois percentuais.</p>
     </div>
 
     <div class="section">
-      <h2>Pedidos parados (B2B) — prioridade por valor</h2>
-      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias. Clique num pedido pra ver os produtos.</p>
-      <div class="card scroll-x">
-        ${tabelaPedidosHtml(pedidos, dados.comparacao_isolado || [], 'b2b')}
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Produtos parados (B2B)</h2>
-      <p class="section-sub">SKUs presos nos pedidos em aberto/digitação acima</p>
-      <div class="card scroll-x">
-        ${tabelaProdutosParadosHtml(produtos)}
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Estoque (tabela de custo)</h2>
-      <p class="section-sub">Só os SKUs cadastrados na tabela de custo — ${estoque.filter(e=>e.saldo===null).length>0?'<span class="tag tag-amber">alguns sem saldo confirmado, ver nota abaixo</span>':'todos com saldo lido do Bling'}</p>
-      <div class="card scroll-x">
-        <table>
-          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Saldo</th></tr></thead>
-          <tbody>
-            ${estoque.map(e => `<tr><td>${escapeHtml(e.sku)}</td><td>${escapeHtml(e.nome)}</td><td class="num">${e.saldo===null?'<span class="tag tag-amber">não confirmado</span>':e.saldo}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>O que precisa comprar</h2>
-      <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque que sobrou depois do B2C já ter alocado a dele (o B2C tem prioridade — seção abaixo).</p>
-      <div class="card scroll-x">
-        <table>
-          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
-          <tbody>
-            ${(proj.lista_comprar||[]).length===0 ? '<tr><td colspan="4" class="muted">Nada a comprar — estoque cobre toda a carteira parada.</td></tr>' :
-              (proj.lista_comprar||[]).map(i => `<tr><td>${escapeHtml(i.sku)}</td><td>${escapeHtml(i.nome)}</td><td class="num">${i.quantidade_faltante}</td><td class="num">${brl(i.custo_estimado)}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Clientes B2B — positivação (${dados.janela_dias||180} dias)</h2>
-      <p class="section-sub">Base fixa de ${clientesTodos.length} clientes. Última compra = pedido em aberto/digitação OU nota fiscal, o que for mais recente. Positivados aparecem primeiro.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-        <input type="text" id="clientesBusca" placeholder="Buscar por nome ou CNPJ..." value="${escapeHtml(clientesFiltroTexto)}" style="flex:1;min-width:200px;background:var(--color-surface);border:1px solid var(--color-divider);color:var(--color-text);border-radius:6px;padding:8px 10px;font-family:inherit;">
-        <span class="muted" style="font-size:11.5px;">${clientesFiltrados.length} cliente(s)</span>
-      </div>
-      <div class="card scroll-x">
-        <table>
-          <thead><tr><th>Cliente</th><th>CNPJ</th><th>Cidade/UF</th><th>Status</th><th>Última atividade</th><th class="num">Dias sem comprar</th></tr></thead>
-          <tbody>
-            ${clientesExibidos.map(c => `<tr>
-              <td>${escapeHtml(c.nome)}</td>
-              <td class="muted" style="font-size:11.5px;">${escapeHtml(c.cnpj)}</td>
-              <td>${escapeHtml(c.cidade)}/${escapeHtml(c.uf)}</td>
-              <td>${c.status==='positivado' ? '<span class="tag tag-green">positivado</span>' : '<span class="tag tag-neutral">'+escapeHtml(c.status)+'</span>'}</td>
-              <td>${fmtData(c.ultima_compra)}${c.origem?' <span class="muted" style="font-size:10.5px;">('+(c.origem==='nota_fiscal'?'nota fiscal':'pedido')+')</span>':''}</td>
-              <td class="num">${c.dias_sem_comprar ?? '—'}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-      ${clientesFiltrados.length > CLIENTES_LIMITE_PADRAO ? `
-        <div style="text-align:center;margin-top:10px;">
-          <button class="btn" id="btnMostrarMaisClientes">${clientesMostrarTodos ? 'Mostrar menos' : 'Mostrar todos os ' + clientesFiltrados.length}</button>
-        </div>` : ''}
-    </div>
-
-    <div class="section section-divider">
-      <h2 style="margin-bottom:8px;">Carteira parada B2C</h2>
-      <p class="section-sub" style="margin-bottom:12px;">Mesmo tratamento do B2B — margem, estoque e o que comprar. O saldo de estoque é físico e único: a fila B2C aloca PRIMEIRO (prioridade do canal), e o B2B (seção principal acima) usa o que sobra depois disso.</p>
-
-      <div class="kpi-grid">
-        <div class="kpi"><div class="label">Pedidos parados (B2C)</div><div class="value">${pedidosB2C.length}</div></div>
-        <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaqueB2C}</div></div>
-        <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(projB2C.valor_atende_sem_comprar)}</div></div>
-        <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(projB2C.valor_depende_reposicao)}</div></div>
-      </div>
-
-      <h2 style="margin-top:20px;">Margem da carteira parada (B2C)</h2>
-      <div class="card">
-        <p>Margem geral: <strong style="font-size:16px;">${pct(margemB2C.pct_geral)}</strong> <span class="muted">sobre ${brl(margemB2C.valor_base_calculo)} em pedidos com custo completo</span></p>
-        ${margemB2C.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margemB2C.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
-      </div>
-
-      <h2 style="margin-top:20px;">Pedidos parados (B2C) — prioridade por valor</h2>
-      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Coluna "Estoque hoje" = comparação isolada, contra o saldo bruto (não desconta pedido nenhum, é só "esse pedido sozinho teria o que precisa?"). Clique num pedido pra ver os produtos.</p>
-      <div class="card scroll-x">
-        ${tabelaPedidosHtml(pedidosB2C, dados.comparacao_isolado_b2c || [], 'b2c')}
-      </div>
-
-      <h2 style="margin-top:20px;">Produtos parados (B2C)</h2>
-      <div class="card scroll-x">
-        ${tabelaProdutosParadosHtml(produtosB2C)}
-      </div>
-
-      <h2 style="margin-top:20px;">O que precisa comprar (B2C)</h2>
-      <p class="section-sub">Considerando o estoque que já sobrou depois de atender a fila B2B por prioridade</p>
-      <div class="card scroll-x">
-        <table>
-          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
-          <tbody>
-            ${(projB2C.lista_comprar||[]).length===0 ? '<tr><td colspan="4" class="muted">Nada a comprar — estoque restante cobre toda a carteira parada B2C.</td></tr>' :
-              (projB2C.lista_comprar||[]).map(i => `<tr><td>${escapeHtml(i.sku)}</td><td>${escapeHtml(i.nome)}</td><td class="num">${i.quantidade_faltante}</td><td class="num">${brl(i.custo_estimado)}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
+      <p class="section-sub" style="margin-bottom:10px;">Clique num tópico pra ver o detalhe. Do "Indicadores B2B" até "Clientes B2B — positivação" é só carteira B2B; os tópicos B2C vêm depois.</p>
+      ${renderTopico('kpi-b2b', 'Indicadores B2B', corpoKpiB2B)}
+      ${renderTopico('margem-b2b', 'Margem da carteira parada (B2B)', corpoMargemB2B)}
+      ${renderTopico('pedidos-b2b', 'Pedidos parados (B2B) — prioridade por valor', corpoPedidosB2B)}
+      ${renderTopico('produtos-b2b', 'Produtos parados (B2B)', corpoProdutosB2B)}
+      ${renderTopico('estoque', 'Estoque (tabela de custo)', corpoEstoque)}
+      ${renderTopico('comprar-b2b', 'O que precisa comprar (B2B)', corpoComprarB2B)}
+      ${renderTopico('clientes-b2b', `Clientes B2B — positivação (${dados.janela_dias||180} dias)`, corpoClientesB2B)}
+      ${renderTopico('kpi-b2c', 'Indicadores B2C', corpoKpiB2C)}
+      ${renderTopico('margem-b2c', 'Margem da carteira parada (B2C)', corpoMargemB2C)}
+      ${renderTopico('pedidos-b2c', 'Pedidos parados (B2C) — prioridade por valor', corpoPedidosB2C)}
+      ${renderTopico('produtos-b2c', 'Produtos parados (B2C)', corpoProdutosB2C)}
+      ${renderTopico('comprar-b2c', 'O que precisa comprar (B2C)', corpoComprarB2C)}
     </div>
   `;
 
@@ -408,6 +446,7 @@ function render(){
     atualizarImposto(v);
   });
 
+  ligarTopicos();
   ligarExpansaoPedidos('b2b');
   ligarExpansaoPedidos('b2c');
 
