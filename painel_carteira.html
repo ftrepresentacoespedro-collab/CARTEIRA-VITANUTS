@@ -31,6 +31,7 @@ p { margin: 0; }
 .nav { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-divider); margin-bottom: 18px; flex-wrap: wrap; }
 .aviso { background: var(--color-amber-bg); border: 1px solid var(--color-amber); color: var(--color-amber); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; margin-bottom: 18px; }
 .section { margin-bottom: 28px; }
+.section-divider { border-top: 1px solid var(--color-divider); padding-top: 24px; margin-top: 4px; }
 .card { background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: 12px; padding: 16px; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
 .kpi { background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius); padding: 12px 14px; }
@@ -55,6 +56,8 @@ input[type=password] { background: var(--color-bg); border: 1px solid var(--colo
 .login-box { max-width: 320px; margin: 80px auto; text-align: center; }
 .section-sub { font-size: 12px; color: color-mix(in srgb, var(--color-text) 55%, transparent); margin-bottom: 10px; }
 .scroll-x { overflow-x: auto; }
+.badge-visitantes { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.badge-visitantes .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-green); display: inline-block; }
 </style>
 </head>
 <body>
@@ -63,10 +66,20 @@ input[type=password] { background: var(--color-bg); border: 1px solid var(--colo
 <script>
 // ================== CONFIGURAÇÃO ==================
 const API_URL = "https://script.google.com/macros/s/AKfycbxExdJYeuzI0hkS9aT6JBqZxy1NkYPMUIfFVnKwYWGoiCScz52o4jZMdUwLlFxmmLRKEg/exec";
+const INTERVALO_HEARTBEAT_MS = 45000;
 // ====================================================
 
 function getSenhaSalva(){ return sessionStorage.getItem('carteira_senha') || ''; }
 function salvarSenha(s){ sessionStorage.setItem('carteira_senha', s); }
+
+function getDeviceId(){
+  let id = localStorage.getItem('carteira_device_id');
+  if(!id){
+    id = 'dev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('carteira_device_id', id);
+  }
+  return id;
+}
 
 function brl(v){ return 'R$ ' + (Number(v)||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function pct(v){ return v === null || v === undefined ? '—' : (v*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%'; }
@@ -101,6 +114,9 @@ async function tentarLogin(){
 }
 
 let dados = null;
+let heartbeatIniciado = false;
+let visitantesInfo = { vendo_agora: 0, unicos: 0 };
+
 async function carregarDados(senha){
   const resp = await buscarViaJsonp(API_URL, 'senha=' + encodeURIComponent(senha));
   if(resp.erro === 'senha_incorreta'){ renderLogin(true); return; }
@@ -108,6 +124,7 @@ async function carregarDados(senha){
   salvarSenha(senha);
   dados = resp;
   render();
+  iniciarHeartbeat();
 }
 
 async function atualizarImposto(novoPct){
@@ -116,15 +133,96 @@ async function atualizarImposto(novoPct){
   await carregarDados(senha);
 }
 
+// Contador de "vendo agora" / "únicos" — independente do painel
+// principal, próprio arquivo no Drive. Um heartbeat imediato ao
+// carregar e depois a cada 45s enquanto a aba ficar aberta.
+function iniciarHeartbeat(){
+  if(heartbeatIniciado) return;
+  heartbeatIniciado = true;
+  enviarHeartbeat();
+  setInterval(enviarHeartbeat, INTERVALO_HEARTBEAT_MS);
+}
+async function enviarHeartbeat(){
+  const senha = getSenhaSalva();
+  if(!senha) return;
+  const resp = await buscarViaJsonp(API_URL, 'senha=' + encodeURIComponent(senha) + '&acao=heartbeat&device=' + encodeURIComponent(getDeviceId()));
+  if(resp && resp.ok){
+    visitantesInfo = { vendo_agora: resp.vendo_agora, unicos: resp.unicos };
+    atualizarBadgeVisitantes();
+  }
+}
+function atualizarBadgeVisitantes(){
+  const el = document.getElementById('badgeVisitantes');
+  if(el) el.innerHTML = '<span class="dot"></span>' + visitantesInfo.vendo_agora + ' vendo agora · ' + visitantesInfo.unicos + ' únicos';
+}
+
 let clientesFiltroTexto = '';
 let clientesMostrarTodos = false;
 const CLIENTES_LIMITE_PADRAO = 30;
+
+// Gera as duas tabelas de pedidos parados (linhas + expansão de itens)
+// reaproveitando o mesmo HTML pra B2B e B2C, mudando só o prefixo do
+// data-idx pra não colidir índice entre os dois canais.
+function tabelaPedidosHtml(pedidos, comparacaoIsolado, prefixo){
+  return `
+    <table>
+      <thead><tr><th></th><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th class="num">Margem</th>${comparacaoIsolado ? '<th>Estoque hoje</th>' : ''}</tr></thead>
+      <tbody>
+        ${pedidos.map((p,i) => {
+          const isolado = comparacaoIsolado ? comparacaoIsolado.find(x=>x.pedido_id===p.id) : null;
+          const atende = isolado ? isolado.atende_isolado : null;
+          const itensHtml = (p.itens||[]).map(it => `<div style="padding:3px 0;font-size:12px;">${escapeHtml(it.nome)} <span class="muted">(${escapeHtml(it.sku)})</span> — <span class="num">${it.quantidade} un</span></div>`).join('');
+          return `<tr class="${p.destaque_90_dias?'destaque':''} linha-pedido-${prefixo}" data-idx="${i}" style="cursor:pointer;">
+            <td class="expand-icon" style="width:16px;color:var(--color-accent);">▸</td>
+            <td>#${escapeHtml(p.numero)}</td>
+            <td>${escapeHtml(p.cliente)}</td>
+            <td>${fmtData(p.data_pedido)}</td>
+            <td class="num">${p.dias_parado ?? '—'}</td>
+            <td class="num">${brl(p.valor)}</td>
+            <td class="num">${p.margem_indisponivel_item_sem_custo ? '<span class="tag tag-amber">sem custo cadastrado</span>' : pct(p.margem_pct)}</td>
+            ${comparacaoIsolado ? `<td>${atende===null?'<span class="muted">—</span>':(atende?'<span class="tag tag-green">atende</span>':'<span class="tag tag-red">falta item</span>')}</td>` : ''}
+          </tr>
+          <tr class="itens-pedido-${prefixo}" data-parent="${i}" style="display:none;"><td></td><td colspan="${comparacaoIsolado ? 7 : 6}" style="padding:8px 0 12px 24px;">${itensHtml}</td></tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function tabelaProdutosParadosHtml(produtos){
+  return `
+    <table>
+      <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. presa</th><th class="num">Valor</th><th class="num">Pedidos</th></tr></thead>
+      <tbody>
+        ${produtos.map(p => `<tr>
+          <td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.nome)}</td>
+          <td class="num">${p.quantidade}</td><td class="num">${brl(p.valor)}</td><td class="num">${p.pedidos}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function ligarExpansaoPedidos(prefixo){
+  document.querySelectorAll('.linha-pedido-' + prefixo).forEach(tr => {
+    tr.addEventListener('click', () => {
+      const idx = tr.getAttribute('data-idx');
+      const corpo = document.querySelector('.itens-pedido-' + prefixo + '[data-parent="'+idx+'"]');
+      const icone = tr.querySelector('.expand-icon');
+      const aberto = corpo.style.display !== 'none';
+      corpo.style.display = aberto ? 'none' : '';
+      icone.textContent = aberto ? '▸' : '▾';
+    });
+  });
+}
 
 function render(){
   if(!dados){ document.getElementById('app').innerHTML = '<p class="muted">Sem dados ainda.</p>'; return; }
 
   const pedidos = dados.pedidos_parados || [];
   const produtos = dados.produtos_parados || [];
+  const pedidosB2C = dados.pedidos_parados_b2c || [];
+  const produtosB2C = dados.produtos_parados_b2c || [];
+  const margemB2C = dados.margem_b2c || {};
+  const projB2C = dados.projecao_b2c || {};
   const clientesTodos = dados.clientes || [];
   const estoque = dados.estoque || [];
   const proj = dados.projecao || {};
@@ -134,6 +232,7 @@ function render(){
   const cGeral = dados.carteira_geral || {qtd:0,valor:0};
 
   const qtdDestaque = pedidos.filter(p=>p.destaque_90_dias).length;
+  const qtdDestaqueB2C = pedidosB2C.filter(p=>p.destaque_90_dias).length;
 
   // Clientes: positivados sempre primeiro (mais recentes primeiro), "sem compras" depois
   const clientesOrdenados = [...clientesTodos].sort((a,b) => {
@@ -151,7 +250,8 @@ function render(){
   document.getElementById('app').innerHTML = `
     <div class="nav">
       <h1>Carteira Parada — Vitanuts</h1>
-      <span class="muted" style="margin-left:auto;font-size:11.5px;">Atualizado em ${new Date(dados.gerado_em).toLocaleString('pt-BR')}</span>
+      <span id="badgeVisitantes" class="badge-visitantes" style="margin-left:auto;"><span class="dot"></span>${visitantesInfo.vendo_agora} vendo agora · ${visitantesInfo.unicos} únicos</span>
+      <span class="muted" style="font-size:11.5px;">Atualizado em ${new Date(dados.gerado_em).toLocaleString('pt-BR')}</span>
     </div>
 
     <div class="aviso">${escapeHtml(dados.aviso || 'Este relatório trata somente carteira parada (Em digitação + Em aberto). Não mostra pedidos faturados.')}</div>
@@ -163,7 +263,7 @@ function render(){
         <div class="kpi"><div class="label">B2B</div><div class="value">${brl(cB2B.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2B.qtd} pedidos</div></div>
         <div class="kpi"><div class="label">B2C</div><div class="value">${brl(cB2C.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2C.qtd} pedidos</div></div>
       </div>
-      <p class="section-sub" style="margin-bottom:12px;">A partir daqui, todo o relatório (produtos parados, clientes, estoque, margem) trata apenas da carteira <strong>B2B</strong>.</p>
+      <p class="section-sub" style="margin-bottom:12px;">Daqui até "Clientes B2B", o relatório trata apenas da carteira <strong>B2B</strong>. A carteira <strong>B2C</strong> tem seção própria de margem mais abaixo.</p>
     </div>
 
     <div class="kpi-grid">
@@ -186,6 +286,7 @@ function render(){
       <div class="card">
         <p>Margem geral: <strong style="font-size:16px;">${pct(margem.pct_geral)}</strong> <span class="muted">sobre ${brl(margem.valor_base_calculo)} em pedidos com custo completo</span></p>
         ${margem.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margem.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
+        <p class="muted" style="font-size:11px;margin-top:8px;">O imposto % vale para B2B e B2C juntos — mudar aqui também recalcula a margem B2C mais abaixo.</p>
       </div>
     </div>
 
@@ -193,27 +294,7 @@ function render(){
       <h2>Pedidos parados (B2B) — prioridade por valor</h2>
       <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias. Clique num pedido pra ver os produtos.</p>
       <div class="card scroll-x">
-        <table>
-          <thead><tr><th></th><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th class="num">Margem</th><th>Estoque hoje</th></tr></thead>
-          <tbody>
-            ${pedidos.map((p,i) => {
-              const isolado = (dados.comparacao_isolado||[]).find(x=>x.pedido_id===p.id);
-              const atende = isolado ? isolado.atende_isolado : null;
-              const itensHtml = (p.itens||[]).map(it => `<div style="padding:3px 0;color:var(--color-neutral-300);font-size:12px;">${escapeHtml(it.nome)} <span class="muted">(${escapeHtml(it.sku)})</span> — <span class="num">${it.quantidade} un</span></div>`).join('');
-              return `<tr class="${p.destaque_90_dias?'destaque':''} linha-pedido" data-idx="${i}" style="cursor:pointer;">
-                <td class="expand-icon" style="width:16px;color:var(--color-accent);">▸</td>
-                <td>#${escapeHtml(p.numero)}</td>
-                <td>${escapeHtml(p.cliente)}</td>
-                <td>${fmtData(p.data_pedido)}</td>
-                <td class="num">${p.dias_parado ?? '—'}</td>
-                <td class="num">${brl(p.valor)}</td>
-                <td class="num">${p.margem_indisponivel_item_sem_custo ? '<span class="tag tag-amber">sem custo cadastrado</span>' : pct(p.margem_pct)}</td>
-                <td>${atende===null?'<span class="muted">—</span>':(atende?'<span class="tag tag-green">atende</span>':'<span class="tag tag-red">falta item</span>')}</td>
-              </tr>
-              <tr class="itens-pedido" data-parent="${i}" style="display:none;"><td></td><td colspan="7" style="padding:8px 0 12px 24px;">${itensHtml}</td></tr>`;
-            }).join('')}
-          </tbody>
-        </table>
+        ${tabelaPedidosHtml(pedidos, dados.comparacao_isolado || [], 'b2b')}
       </div>
     </div>
 
@@ -221,15 +302,7 @@ function render(){
       <h2>Produtos parados (B2B)</h2>
       <p class="section-sub">SKUs presos nos pedidos em aberto/digitação acima</p>
       <div class="card scroll-x">
-        <table>
-          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. presa</th><th class="num">Valor</th><th class="num">Pedidos</th></tr></thead>
-          <tbody>
-            ${produtos.map(p => `<tr>
-              <td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.nome)}</td>
-              <td class="num">${p.quantidade}</td><td class="num">${brl(p.valor)}</td><td class="num">${p.pedidos}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
+        ${tabelaProdutosParadosHtml(produtos)}
       </div>
     </div>
 
@@ -248,7 +321,7 @@ function render(){
 
     <div class="section">
       <h2>O que precisa comprar</h2>
-      <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque atual</p>
+      <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque atual. Aloca ANTES do B2C — a lista equivalente do B2C está na seção própria mais abaixo e já considera o que sobrar daqui.</p>
       <div class="card scroll-x">
         <table>
           <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
@@ -287,6 +360,47 @@ function render(){
           <button class="btn" id="btnMostrarMaisClientes">${clientesMostrarTodos ? 'Mostrar menos' : 'Mostrar todos os ' + clientesFiltrados.length}</button>
         </div>` : ''}
     </div>
+
+    <div class="section section-divider">
+      <h2 style="margin-bottom:8px;">Carteira parada B2C</h2>
+      <p class="section-sub" style="margin-bottom:12px;">Mesmo tratamento do B2B — margem, estoque e o que comprar. O saldo de estoque é físico e único: a fila B2B aloca primeiro (seção principal acima), e o B2C abaixo usa o que sobrou depois disso, pra não contar a mesma unidade duas vezes.</p>
+
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Pedidos parados (B2C)</div><div class="value">${pedidosB2C.length}</div></div>
+        <div class="kpi"><div class="label">Parados há mais de ${dados.destaque_dias||90} dias</div><div class="value" style="color:var(--color-red);">${qtdDestaqueB2C}</div></div>
+        <div class="kpi"><div class="label">Atende com estoque restante</div><div class="value" style="color:var(--color-green);">${brl(projB2C.valor_atende_sem_comprar)}</div></div>
+        <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(projB2C.valor_depende_reposicao)}</div></div>
+      </div>
+
+      <h2 style="margin-top:20px;">Margem da carteira parada (B2C)</h2>
+      <div class="card">
+        <p>Margem geral: <strong style="font-size:16px;">${pct(margemB2C.pct_geral)}</strong> <span class="muted">sobre ${brl(margemB2C.valor_base_calculo)} em pedidos com custo completo</span></p>
+        ${margemB2C.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margemB2C.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
+      </div>
+
+      <h2 style="margin-top:20px;">Pedidos parados (B2C) — prioridade por valor</h2>
+      <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Coluna "Estoque restante" = isolado, contra o saldo bruto (sem descontar o que o B2B já reservou). Clique num pedido pra ver os produtos.</p>
+      <div class="card scroll-x">
+        ${tabelaPedidosHtml(pedidosB2C, dados.comparacao_isolado_b2c || [], 'b2c')}
+      </div>
+
+      <h2 style="margin-top:20px;">Produtos parados (B2C)</h2>
+      <div class="card scroll-x">
+        ${tabelaProdutosParadosHtml(produtosB2C)}
+      </div>
+
+      <h2 style="margin-top:20px;">O que precisa comprar (B2C)</h2>
+      <p class="section-sub">Considerando o estoque que já sobrou depois de atender a fila B2B por prioridade</p>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>SKU</th><th>Produto</th><th class="num">Qtd. a comprar</th><th class="num">Custo estimado</th></tr></thead>
+          <tbody>
+            ${(projB2C.lista_comprar||[]).length===0 ? '<tr><td colspan="4" class="muted">Nada a comprar — estoque restante cobre toda a carteira parada B2C.</td></tr>' :
+              (projB2C.lista_comprar||[]).map(i => `<tr><td>${escapeHtml(i.sku)}</td><td>${escapeHtml(i.nome)}</td><td class="num">${i.quantidade_faltante}</td><td class="num">${brl(i.custo_estimado)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 
   document.getElementById('btnSalvarImposto').addEventListener('click', () => {
@@ -294,16 +408,8 @@ function render(){
     atualizarImposto(v);
   });
 
-  document.querySelectorAll('.linha-pedido').forEach(tr => {
-    tr.addEventListener('click', () => {
-      const idx = tr.getAttribute('data-idx');
-      const corpo = document.querySelector('.itens-pedido[data-parent="'+idx+'"]');
-      const icone = tr.querySelector('.expand-icon');
-      const aberto = corpo.style.display !== 'none';
-      corpo.style.display = aberto ? 'none' : '';
-      icone.textContent = aberto ? '▸' : '▾';
-    });
-  });
+  ligarExpansaoPedidos('b2b');
+  ligarExpansaoPedidos('b2c');
 
   const buscaInput = document.getElementById('clientesBusca');
   if(buscaInput){
