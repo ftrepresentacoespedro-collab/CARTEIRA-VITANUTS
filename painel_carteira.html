@@ -425,9 +425,17 @@ function render(){
     </div>
 
     <div class="section">
-      <p class="section-sub" style="margin-bottom:10px;">Clique num tópico pra ver o detalhe. Do "Indicadores B2B" até "Clientes B2B — positivação" é só carteira B2B; os tópicos B2C vêm depois.</p>
-      ${renderTopico('kpi-b2b', 'Indicadores B2B', corpoKpiB2B)}
-      ${renderTopico('margem-b2b', 'Margem da carteira parada (B2B)', corpoMargemB2B)}
+      <h2 style="margin-bottom:8px;">Indicadores B2B</h2>
+      ${corpoKpiB2B}
+    </div>
+
+    <div class="section">
+      <h2 style="margin-bottom:8px;">Margem da carteira parada (B2B)</h2>
+      ${corpoMargemB2B}
+    </div>
+
+    <div class="section">
+      <p class="section-sub" style="margin-bottom:10px;">Clique num tópico pra ver o detalhe. Do "Pedidos parados (B2B)" até "Clientes B2B — positivação" é só carteira B2B; os tópicos B2C vêm depois.</p>
       ${renderTopico('pedidos-b2b', 'Pedidos parados (B2B) — prioridade por valor', corpoPedidosB2B)}
       ${renderTopico('produtos-b2b', 'Produtos parados (B2B)', corpoProdutosB2B)}
       ${renderTopico('estoque', 'Estoque (tabela de custo)', corpoEstoque)}
