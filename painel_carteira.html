@@ -93,7 +93,7 @@ function pct(v){ return v === null || v === undefined ? '—' : (v*100).toLocale
 function fmtData(d){ if(!d) return '—'; const [a,m,dia] = d.split('-'); return dia+'/'+m+'/'+a; }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-function buscarViaJsonp(url, params){
+function buscarViaJsonpUmaVez_(url, params){
   return new Promise((resolve) => {
     const nomeCallback = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random()*100000);
     const script = document.createElement('script');
@@ -102,6 +102,21 @@ function buscarViaJsonp(url, params){
     script.src = url + '?' + params + '&callback=' + nomeCallback + '&_=' + Date.now();
     document.body.appendChild(script);
   });
+}
+
+// Falha de rede aqui costuma ser soluço transitório de conexão (perdia
+// de pacote, timeout momentâneo) — na prática, recarregar a página
+// quase sempre resolve. Em vez de fazer a pessoa apertar F5 na mão,
+// tenta de novo sozinho (até 2 vezes, com uma pausa curta) antes de
+// mostrar erro de verdade.
+async function buscarViaJsonp(url, params){
+  const MAX_TENTATIVAS = 3;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    const resposta = await buscarViaJsonpUmaVez_(url, params);
+    if (resposta.erro !== 'falha_de_rede') return resposta;
+    if (tentativa < MAX_TENTATIVAS) await new Promise(r => setTimeout(r, 800 * tentativa));
+  }
+  return { erro: 'falha_de_rede' };
 }
 
 function renderLogin(erro){
