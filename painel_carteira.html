@@ -69,16 +69,13 @@ input[type=password] { background: var(--color-bg); border: 1px solid var(--colo
 </head>
 <body>
 <div id="app" class="wrap"></div>
-
 <script>
 // ================== CONFIGURAÇÃO ==================
 const API_URL = "https://script.google.com/macros/s/AKfycbxExdJYeuzI0hkS9aT6JBqZxy1NkYPMUIfFVnKwYWGoiCScz52o4jZMdUwLlFxmmLRKEg/exec";
 const INTERVALO_HEARTBEAT_MS = 45000;
 // ====================================================
-
 function getSenhaSalva(){ return sessionStorage.getItem('carteira_senha') || ''; }
 function salvarSenha(s){ sessionStorage.setItem('carteira_senha', s); }
-
 function getDeviceId(){
   let id = localStorage.getItem('carteira_device_id');
   if(!id){
@@ -87,12 +84,10 @@ function getDeviceId(){
   }
   return id;
 }
-
 function brl(v){ return 'R$ ' + (Number(v)||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function pct(v){ return v === null || v === undefined ? '—' : (v*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%'; }
 function fmtData(d){ if(!d) return '—'; const [a,m,dia] = d.split('-'); return dia+'/'+m+'/'+a; }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
 function buscarViaJsonpUmaVez_(url, params){
   return new Promise((resolve) => {
     const nomeCallback = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random()*100000);
@@ -103,7 +98,6 @@ function buscarViaJsonpUmaVez_(url, params){
     document.body.appendChild(script);
   });
 }
-
 // Falha de rede aqui costuma ser soluço transitório de conexão (perdia
 // de pacote, timeout momentâneo) — na prática, recarregar a página
 // quase sempre resolve. Em vez de fazer a pessoa apertar F5 na mão,
@@ -118,7 +112,6 @@ async function buscarViaJsonp(url, params){
   }
   return { erro: 'falha_de_rede' };
 }
-
 function renderLogin(erro){
   document.getElementById('app').innerHTML = `
     <div class="login-box">
@@ -134,11 +127,9 @@ async function tentarLogin(){
   const senha = document.getElementById('senhaInput').value;
   await carregarDados(senha);
 }
-
 let dados = null;
 let heartbeatIniciado = false;
 let visitantesInfo = { vendo_agora: 0, unicos: 0 };
-
 async function carregarDados(senha){
   const resp = await buscarViaJsonp(API_URL, 'senha=' + encodeURIComponent(senha));
   if(resp.erro === 'senha_incorreta'){ renderLogin(true); return; }
@@ -148,13 +139,11 @@ async function carregarDados(senha){
   render();
   iniciarHeartbeat();
 }
-
 async function atualizarImposto(novoPct){
   const senha = getSenhaSalva();
   await buscarViaJsonp(API_URL, 'senha=' + encodeURIComponent(senha) + '&acao=definir_imposto&valor=' + encodeURIComponent(novoPct));
   await carregarDados(senha);
 }
-
 // Contador de "vendo agora" / "únicos" — independente do painel
 // principal, próprio arquivo no Drive. Um heartbeat imediato ao
 // carregar e depois a cada 45s enquanto a aba ficar aberta.
@@ -177,12 +166,10 @@ function atualizarBadgeVisitantes(){
   const el = document.getElementById('badgeVisitantes');
   if(el) el.innerHTML = '<span class="dot"></span>' + visitantesInfo.vendo_agora + ' vendo agora · ' + visitantesInfo.unicos + ' únicos';
 }
-
 let clientesFiltroTexto = '';
 let clientesMostrarTodos = false;
 const CLIENTES_LIMITE_PADRAO = 30;
 let topicosAbertos = new Set(); // vazio = tudo recolhido por padrão
-
 // Mapa tópico -> nome da seção pesada que ele precisa (bate com
 // SECOES_DISPONIVEIS no backend). Tópico que não está aqui (kpi-b2c,
 // margem-b2c) já vem pronto no resumo enxuto, não precisa buscar nada.
@@ -196,7 +183,6 @@ const SECAO_POR_TOPICO = {
   'produtos-b2c': 'produtos_parados_b2c',
   'comprar-b2c': 'projecao_b2c',
 };
-
 function renderTopico(key, titulo, corpoHtml){
   const aberto = topicosAbertos.has(key);
   return `
@@ -210,7 +196,6 @@ function renderTopico(key, titulo, corpoHtml){
       </div>
     </div>`;
 }
-
 // Busca a seção pesada de um tópico específico e mescla no `dados`
 // global. Não substitui o objeto inteiro — só adiciona os campos que
 // vieram na resposta, preservando o que já foi carregado antes.
@@ -221,7 +206,6 @@ async function carregarSecao_(secaoNome){
   Object.assign(dados, resp);
   return true;
 }
-
 function ligarTopicos(){
   document.querySelectorAll('.topico-header').forEach(header => {
     header.addEventListener('click', async () => {
@@ -229,13 +213,11 @@ function ligarTopicos(){
       const corpo = document.querySelector('.topico-corpo[data-topico-corpo="'+key+'"]');
       const chevron = header.querySelector('.topico-chevron');
       const aberto = topicosAbertos.has(key);
-
       if(aberto){
         topicosAbertos.delete(key); corpo.style.display = 'none'; chevron.classList.remove('aberto');
         return;
       }
       topicosAbertos.add(key); corpo.style.display = 'block'; chevron.classList.add('aberto');
-
       const secaoNome = SECAO_POR_TOPICO[key];
       if(secaoNome && dados[secaoNome] === undefined){
         corpo.innerHTML = '<p class="muted" style="padding:12px 0;">Carregando...</p>';
@@ -246,7 +228,6 @@ function ligarTopicos(){
     });
   });
 }
-
 // Se algum tópico ficou marcado como aberto (ex: você tinha aberto
 // "Pedidos parados B2B" e depois salvou um imposto novo, que recarrega
 // o resumo enxuto do zero) mas o dado pesado dele não está mais em
@@ -263,14 +244,18 @@ async function garantirSecoesAbertasCarregadas(){
   }
   if(precisouRenderizarDeNovo) render();
 }
-
 // Gera as duas tabelas de pedidos parados (linhas + expansão de itens)
 // reaproveitando o mesmo HTML pra B2B e B2C, mudando só o prefixo do
 // data-idx pra não colidir índice entre os dois canais.
+// Coluna "Prazo pagto" mostra dados.prazo_pagamento (texto tipo
+// "30/60 dias" ou "À vista", calculado no backend a partir das
+// parcelas do pedido — ver ressalva sobre confiabilidade no cabeçalho
+// do Code_Carteira.gs). "—" quando o backend não conseguiu calcular
+// (pedido sem parcela reconhecida).
 function tabelaPedidosHtml(pedidos, comparacaoIsolado, prefixo){
   return `
     <table>
-      <thead><tr><th></th><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th class="num">Margem</th>${comparacaoIsolado ? '<th>Estoque hoje</th>' : ''}</tr></thead>
+      <thead><tr><th></th><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th>Prazo pagto</th><th class="num">Margem</th>${comparacaoIsolado ? '<th>Estoque hoje</th>' : ''}</tr></thead>
       <tbody>
         ${pedidos.map((p,i) => {
           const isolado = comparacaoIsolado ? comparacaoIsolado.find(x=>x.pedido_id===p.id) : null;
@@ -283,15 +268,15 @@ function tabelaPedidosHtml(pedidos, comparacaoIsolado, prefixo){
             <td>${fmtData(p.data_pedido)}</td>
             <td class="num">${p.dias_parado ?? '—'}</td>
             <td class="num">${brl(p.valor)}</td>
+            <td>${p.prazo_pagamento ? escapeHtml(p.prazo_pagamento) : '<span class="muted">—</span>'}</td>
             <td class="num">${p.margem_indisponivel_item_sem_custo ? '<span class="tag tag-amber">sem custo cadastrado</span>' : pct(p.margem_pct)}</td>
             ${comparacaoIsolado ? `<td>${atende===null?'<span class="muted">—</span>':(atende?'<span class="tag tag-green">atende</span>':'<span class="tag tag-red">falta item</span>')}</td>` : ''}
           </tr>
-          <tr class="itens-pedido-${prefixo}" data-parent="${i}" style="display:none;"><td></td><td colspan="${comparacaoIsolado ? 7 : 6}" style="padding:8px 0 12px 24px;">${itensHtml}</td></tr>`;
+          <tr class="itens-pedido-${prefixo}" data-parent="${i}" style="display:none;"><td></td><td colspan="${comparacaoIsolado ? 8 : 7}" style="padding:8px 0 12px 24px;">${itensHtml}</td></tr>`;
         }).join('')}
       </tbody>
     </table>`;
 }
-
 function tabelaProdutosParadosHtml(produtos){
   return `
     <table>
@@ -304,7 +289,6 @@ function tabelaProdutosParadosHtml(produtos){
       </tbody>
     </table>`;
 }
-
 function ligarExpansaoPedidos(prefixo){
   document.querySelectorAll('.linha-pedido-' + prefixo).forEach(tr => {
     tr.addEventListener('click', () => {
@@ -317,10 +301,8 @@ function ligarExpansaoPedidos(prefixo){
     });
   });
 }
-
 function render(){
   if(!dados){ document.getElementById('app').innerHTML = '<p class="muted">Sem dados ainda.</p>'; return; }
-
   const contagens = dados.contagens || {};
   const projResumo = dados.projecao_resumo || {};
   const projB2CResumo = dados.projecao_b2c_resumo || {};
@@ -330,7 +312,6 @@ function render(){
   const cB2B = dados.carteira_b2b || {qtd:0,valor:0};
   const cB2C = dados.carteira_b2c || {qtd:0,valor:0};
   const cGeral = dados.carteira_geral || {qtd:0,valor:0};
-
   // Cada uma dessas só existe em `dados` depois que o tópico correspondente
   // foi aberto pelo menos uma vez (busca sob demanda) — daí o "carregado".
   const pedidosCarregado = dados.pedidos_parados !== undefined;
@@ -349,9 +330,7 @@ function render(){
   const produtosB2C = dados.produtos_parados_b2c || [];
   const projB2CCarregado = dados.projecao_b2c !== undefined;
   const projB2C = dados.projecao_b2c || {};
-
   const carregandoHtml = '<p class="muted" style="padding:12px 0;">Carregando...</p>';
-
   // Clientes: positivados sempre primeiro (mais recentes primeiro), "sem compras" depois
   const clientesOrdenados = [...clientesTodos].sort((a,b) => {
     if(a.status==='positivado' && b.status!=='positivado') return -1;
@@ -364,7 +343,6 @@ function render(){
     ? clientesOrdenados.filter(c => (c.nome||'').toLowerCase().includes(filtroLower) || (c.cnpj||'').includes(filtroLower.replace(/\D/g,'')))
     : clientesOrdenados;
   const clientesExibidos = clientesMostrarTodos ? clientesFiltrados : clientesFiltrados.slice(0, CLIENTES_LIMITE_PADRAO);
-
   // Indicadores/margem B2B usam só o resumo enxuto (contagens,
   // projecao_resumo) — nunca precisam de busca sob demanda.
   const corpoKpiB2B = `
@@ -375,7 +353,6 @@ function render(){
       <div class="kpi"><div class="label">Atende com estoque restante</div><div class="value" style="color:var(--color-green);">${brl(projResumo.valor_atende_sem_comprar)}</div></div>
       <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(projResumo.valor_depende_reposicao)}</div></div>
     </div>`;
-
   const corpoMargemB2B = `
     <div style="display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
       <div class="field">
@@ -389,15 +366,12 @@ function render(){
       ${margem.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margem.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
       <p class="muted" style="font-size:11px;margin-top:8px;">O imposto % vale para B2B e B2C juntos — mudar aqui também recalcula a margem B2C.</p>
     </div>`;
-
   const corpoPedidosB2B = !pedidosCarregado ? carregandoHtml : `
     <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Linhas destacadas: parado há mais de ${dados.destaque_dias||90} dias. Clique num pedido pra ver os produtos.</p>
     <div class="card scroll-x">${tabelaPedidosHtml(pedidos, dados.comparacao_isolado || [], 'b2b')}</div>`;
-
   const corpoProdutosB2B = !produtosCarregado ? carregandoHtml : `
     <p class="section-sub">SKUs presos nos pedidos em aberto/digitação acima</p>
     <div class="card scroll-x">${tabelaProdutosParadosHtml(produtos)}</div>`;
-
   const corpoEstoque = !estoqueCarregado ? carregandoHtml : `
     <p class="section-sub">Só os SKUs cadastrados na tabela de custo — ${estoque.filter(e=>e.saldo===null).length>0?'<span class="tag tag-amber">alguns sem saldo confirmado, ver nota abaixo</span>':'todos com saldo lido do Bling'}. Esse saldo é físico e compartilhado entre B2B e B2C.</p>
     <div class="card scroll-x">
@@ -408,7 +382,6 @@ function render(){
         </tbody>
       </table>
     </div>`;
-
   const corpoComprarB2B = !projCarregado ? carregandoHtml : `
     <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque que sobrou depois do B2C já ter alocado a dele (o B2C tem prioridade — ver tópicos B2C).</p>
     <div class="card scroll-x">
@@ -420,7 +393,6 @@ function render(){
         </tbody>
       </table>
     </div>`;
-
   const corpoClientesB2B = !clientesCarregado ? carregandoHtml : `
     <p class="section-sub">Base fixa de ${clientesTodos.length} clientes. Última compra = pedido em aberto/digitação OU nota fiscal, o que for mais recente. Positivados aparecem primeiro.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
@@ -446,7 +418,6 @@ function render(){
       <div style="text-align:center;margin-top:10px;">
         <button class="btn" id="btnMostrarMaisClientes">${clientesMostrarTodos ? 'Mostrar menos' : 'Mostrar todos os ' + clientesFiltrados.length}</button>
       </div>` : ''}`;
-
   // kpi-b2c e margem-b2c usam só o resumo enxuto — nunca precisam de
   // busca sob demanda, por isso não têm o guard "!Carregado".
   const corpoKpiB2C = `
@@ -456,20 +427,16 @@ function render(){
       <div class="kpi"><div class="label">Atende com estoque hoje</div><div class="value" style="color:var(--color-green);">${brl(projB2CResumo.valor_atende_sem_comprar)}</div></div>
       <div class="kpi"><div class="label">Depende de reposição</div><div class="value" style="color:var(--color-amber);">${brl(projB2CResumo.valor_depende_reposicao)}</div></div>
     </div>`;
-
   const corpoMargemB2C = `
     <div class="card">
       <p>Margem geral: <strong style="font-size:16px;">${pct(margemB2C.pct_geral)}</strong> <span class="muted">sobre ${brl(margemB2C.valor_base_calculo)} em pedidos com custo completo</span></p>
       ${margemB2C.qtd_pedidos_excluidos_sem_custo > 0 ? `<p class="tag tag-amber" style="margin-top:8px;">${margemB2C.qtd_pedidos_excluidos_sem_custo} pedido(s) com item fora da tabela de custo — excluído(s) deste cálculo</p>` : ''}
     </div>`;
-
   const corpoPedidosB2C = !pedidosB2CCarregado ? carregandoHtml : `
     <p class="section-sub">Em digitação + Em aberto, últimos ${dados.janela_dias||180} dias. Coluna "Estoque hoje" = comparação isolada, contra o saldo bruto (não desconta nenhum outro pedido, é só "esse pedido sozinho teria o que precisa?"). Clique num pedido pra ver os produtos.</p>
     <div class="card scroll-x">${tabelaPedidosHtml(pedidosB2C, dados.comparacao_isolado_b2c || [], 'b2c')}</div>`;
-
   const corpoProdutosB2C = !produtosB2CCarregado ? carregandoHtml : `
     <div class="card scroll-x">${tabelaProdutosParadosHtml(produtosB2C)}</div>`;
-
   const corpoComprarB2C = !projB2CCarregado ? carregandoHtml : `
     <p class="section-sub">Considerando a fila de prioridade (maior valor primeiro) esgotando o estoque atual — o B2C aloca primeiro (prioridade do canal), antes do B2B.</p>
     <div class="card scroll-x">
@@ -481,16 +448,13 @@ function render(){
         </tbody>
       </table>
     </div>`;
-
   document.getElementById('app').innerHTML = `
     <div class="nav">
       <h1>Carteira Parada — Vitanuts</h1>
       <span id="badgeVisitantes" class="badge-visitantes" style="margin-left:auto;"><span class="dot"></span>${visitantesInfo.vendo_agora} vendo agora · ${visitantesInfo.unicos} únicos</span>
       <span class="muted" style="font-size:11.5px;">Atualizado em ${new Date(dados.gerado_em).toLocaleString('pt-BR')}</span>
     </div>
-
     <div class="aviso">${escapeHtml(dados.aviso || 'Este relatório trata somente carteira parada (Em digitação + Em aberto). Não mostra pedidos faturados.')}</div>
-
     <div class="section">
       <h2 style="margin-bottom:8px;">Carteira parada por canal</h2>
       <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
@@ -499,7 +463,6 @@ function render(){
         <div class="kpi"><div class="label">B2C</div><div class="value">${brl(cB2C.valor)}</div><div class="muted" style="font-size:11px;margin-top:2px;">${cB2C.qtd} pedidos</div></div>
       </div>
     </div>
-
     <div class="section">
       <h2 style="margin-bottom:8px;">Margem geral</h2>
       <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">
@@ -509,17 +472,14 @@ function render(){
       </div>
       <p class="section-sub" style="margin-top:10px;">Combinada é ponderada pelo valor de cada canal, não a média simples dos dois percentuais.</p>
     </div>
-
     <div class="section">
       <h2 style="margin-bottom:8px;">Indicadores B2B</h2>
       ${corpoKpiB2B}
     </div>
-
     <div class="section">
       <h2 style="margin-bottom:8px;">Margem da carteira parada (B2B)</h2>
       ${corpoMargemB2B}
     </div>
-
     <div class="section">
       <p class="section-sub" style="margin-bottom:10px;">Clique num tópico pra ver o detalhe (a primeira vez que abre, busca os dados na hora). Do "Pedidos parados (B2B)" até "Clientes B2B — positivação" é só carteira B2B; os tópicos B2C vêm depois.</p>
       ${renderTopico('pedidos-b2b', 'Pedidos parados (B2B) — prioridade por valor', corpoPedidosB2B)}
@@ -534,16 +494,13 @@ function render(){
       ${renderTopico('comprar-b2c', 'O que precisa comprar (B2C)', corpoComprarB2C)}
     </div>
   `;
-
   document.getElementById('btnSalvarImposto').addEventListener('click', () => {
     const v = document.getElementById('impostoInput').value;
     atualizarImposto(v);
   });
-
   ligarTopicos();
   ligarExpansaoPedidos('b2b');
   ligarExpansaoPedidos('b2c');
-
   const buscaInput = document.getElementById('clientesBusca');
   if(buscaInput){
     buscaInput.addEventListener('input', (e) => {
@@ -559,10 +516,8 @@ function render(){
   if(btnMais){
     btnMais.addEventListener('click', () => { clientesMostrarTodos = !clientesMostrarTodos; render(); });
   }
-
   garantirSecoesAbertasCarregadas();
 }
-
 const senhaSalva = getSenhaSalva();
 if(senhaSalva){ carregarDados(senhaSalva); } else { renderLogin(false); }
 </script>
