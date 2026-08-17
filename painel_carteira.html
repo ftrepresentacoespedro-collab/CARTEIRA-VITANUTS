@@ -39,6 +39,8 @@ p { margin: 0; }
 .kpi .value { font-size: 19px; font-weight: 600; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th { text-align: left; font-weight: 500; color: color-mix(in srgb, var(--color-text) 60%, transparent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 10px; border-bottom: 1px solid var(--color-divider); }
+th.th-ordenavel { cursor: pointer; user-select: none; white-space: nowrap; }
+th.th-ordenavel:hover { color: var(--color-text); }
 td { padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--color-divider) 60%, transparent); vertical-align: top; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.destaque td { background: var(--color-red-bg); }
@@ -169,6 +171,14 @@ function atualizarBadgeVisitantes(){
 let clientesFiltroTexto = '';
 let clientesMostrarTodos = false;
 const CLIENTES_LIMITE_PADRAO = 30;
+// Ordenação clicável das tabelas de pedidos parados — null = ordem
+// original que vem do backend ("prioridade por valor"). Cada canal
+// (b2b/b2c) tem seu próprio estado porque são duas tabelas independentes
+// na tela. Primeiro clique numa coluna ordena decrescente (mais novo,
+// mais tempo parado, maior valor, maior prazo primeiro — o que costuma
+// ser mais útil de bater o olho primeiro); clique de novo na mesma
+// coluna inverte pra crescente.
+let ordenacaoPedidos = { b2b: null, b2c: null };
 let topicosAbertos = new Set(); // vazio = tudo recolhido por padrão
 // Mapa tópico -> nome da seção pesada que ele precisa (bate com
 // SECOES_DISPONIVEIS no backend). Tópico que não está aqui (kpi-b2c,
@@ -244,6 +254,52 @@ async function garantirSecoesAbertasCarregadas(){
   }
   if(precisouRenderizarDeNovo) render();
 }
+// Extrai um número de dias representativo do texto de prazo_pagamento
+// ("30/45 dias" -> 45, "À vista" -> 0, sem prazo -> null) pra dar pra
+// ordenar a coluna "Prazo pagto" — usa o MAIOR número de cada pedido
+// (parcela mais distante), que é o que mais importa pra enxergar risco
+// de prazo longo.
+function prazoOrdenavel_(p){
+  const texto = p.prazo_pagamento;
+  if(!texto) return null;
+  if(texto === 'À vista') return 0;
+  const nums = (texto.match(/\d+/g) || []).map(Number);
+  return nums.length ? Math.max(...nums) : null;
+}
+// Aplica a ordenação clicável (ver ordenacaoPedidos) sobre uma lista de
+// pedidos — null/ordenacao ausente devolve a lista como veio do backend
+// (já em "prioridade por valor"). Pedido sem valor pro campo escolhido
+// (ex: sem prazo calculado) vai pro final, não importa a direção.
+function ordenarPedidos_(pedidos, ordenacao){
+  if(!ordenacao || !ordenacao.campo) return pedidos;
+  const { campo, direcao } = ordenacao;
+  const mult = direcao === 'asc' ? 1 : -1;
+  const valorDe = p => {
+    if(campo === 'data') return p.data_pedido || null;
+    if(campo === 'dias_parado') return p.dias_parado ?? null;
+    if(campo === 'valor') return p.valor ?? null;
+    if(campo === 'prazo') return prazoOrdenavel_(p);
+    return null;
+  };
+  return [...pedidos].sort((a,b) => {
+    const va = valorDe(a), vb = valorDe(b);
+    if(va === null && vb === null) return 0;
+    if(va === null) return 1;  // sem valor sempre por último
+    if(vb === null) return -1;
+    if(va < vb) return -1 * mult;
+    if(va > vb) return 1 * mult;
+    return 0;
+  });
+}
+// Cabeçalho clicável de coluna ordenável — mostra ▲/▼ quando é a coluna
+// ativa da ordenação. O clique de verdade é ligado depois via
+// ligarOrdenacaoPedidos (mesmo padrão de ligarExpansaoPedidos), não
+// inline, pra não misturar onclick com o resto do código.
+function thOrdenavel_(rotulo, campo, prefixo, ordenacao, classeExtra){
+  const ativo = ordenacao && ordenacao.campo === campo;
+  const seta = ativo ? (ordenacao.direcao === 'asc' ? ' ▲' : ' ▼') : '';
+  return `<th class="th-ordenavel ${classeExtra||''}" data-ordenar="${campo}" data-prefixo="${prefixo}">${rotulo}${seta}</th>`;
+}
 // Gera as duas tabelas de pedidos parados (linhas + expansão de itens)
 // reaproveitando o mesmo HTML pra B2B e B2C, mudando só o prefixo do
 // data-idx pra não colidir índice entre os dois canais.
@@ -251,13 +307,16 @@ async function garantirSecoesAbertasCarregadas(){
 // "30/60 dias" ou "À vista", calculado no backend a partir das
 // parcelas do pedido — ver ressalva sobre confiabilidade no cabeçalho
 // do Code_Carteira.gs). "—" quando o backend não conseguiu calcular
-// (pedido sem parcela reconhecida).
+// (pedido sem parcela reconhecida). Data, Dias parado, Valor e Prazo
+// pagto são ordenáveis clicando no cabeçalho (ver ordenacaoPedidos).
 function tabelaPedidosHtml(pedidos, comparacaoIsolado, prefixo){
+  const ordenacao = ordenacaoPedidos[prefixo];
+  const pedidosOrdenados = ordenarPedidos_(pedidos, ordenacao);
   return `
     <table>
-      <thead><tr><th></th><th>Pedido</th><th>Cliente</th><th>Data</th><th class="num">Dias parado</th><th class="num">Valor</th><th>Prazo pagto</th><th class="num">Margem</th>${comparacaoIsolado ? '<th>Estoque hoje</th>' : ''}</tr></thead>
+      <thead><tr><th></th><th>Pedido</th><th>Cliente</th>${thOrdenavel_('Data','data',prefixo,ordenacao)}${thOrdenavel_('Dias parado','dias_parado',prefixo,ordenacao,'num')}${thOrdenavel_('Valor','valor',prefixo,ordenacao,'num')}${thOrdenavel_('Prazo pagto','prazo',prefixo,ordenacao)}<th class="num">Margem</th>${comparacaoIsolado ? '<th>Estoque hoje</th>' : ''}</tr></thead>
       <tbody>
-        ${pedidos.map((p,i) => {
+        ${pedidosOrdenados.map((p,i) => {
           const isolado = comparacaoIsolado ? comparacaoIsolado.find(x=>x.pedido_id===p.id) : null;
           const atende = isolado ? isolado.atende_isolado : null;
           const itensHtml = (p.itens||[]).map(it => `<div style="padding:3px 0;font-size:12px;">${escapeHtml(it.nome)} <span class="muted">(${escapeHtml(it.sku)})</span> — <span class="num">${it.quantidade} un</span></div>`).join('');
@@ -298,6 +357,23 @@ function ligarExpansaoPedidos(prefixo){
       const aberto = corpo.style.display !== 'none';
       corpo.style.display = aberto ? 'none' : '';
       icone.textContent = aberto ? '▸' : '▾';
+    });
+  });
+}
+// Clique num cabeçalho ordenável (Data / Dias parado / Valor / Prazo
+// pagto): primeiro clique numa coluna nova ordena decrescente; clique
+// de novo na mesma coluna alterna pra crescente e vice-versa. Reaplica
+// render() inteiro — mais simples que re-renderizar só a tabela, e o
+// custo é desprezível (é tudo dado que já está em memória).
+function ligarOrdenacaoPedidos(prefixo){
+  document.querySelectorAll('.th-ordenavel[data-prefixo="' + prefixo + '"]').forEach(th => {
+    th.addEventListener('click', () => {
+      const campo = th.getAttribute('data-ordenar');
+      const atual = ordenacaoPedidos[prefixo];
+      ordenacaoPedidos[prefixo] = (atual && atual.campo === campo)
+        ? { campo, direcao: atual.direcao === 'desc' ? 'asc' : 'desc' }
+        : { campo, direcao: 'desc' };
+      render();
     });
   });
 }
@@ -501,6 +577,8 @@ function render(){
   ligarTopicos();
   ligarExpansaoPedidos('b2b');
   ligarExpansaoPedidos('b2c');
+  ligarOrdenacaoPedidos('b2b');
+  ligarOrdenacaoPedidos('b2c');
   const buscaInput = document.getElementById('clientesBusca');
   if(buscaInput){
     buscaInput.addEventListener('input', (e) => {
